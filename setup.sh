@@ -207,6 +207,7 @@ check_root
 get_user_input
 detect_os
 
+echo "➡️ 依赖安装中..." >&2
 install_dependencies
 configure_firewall # 配置防火墙开放端口
 
