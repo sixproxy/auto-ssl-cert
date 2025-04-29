@@ -75,7 +75,7 @@ install_dependencies() {
     local cron_pkg=""
 
     if [[ "$OS_TYPE" == "ubuntu" || "$OS_TYPE" == "debian" ]]; then
-        sudo apt update -qq >/dev/null 2>&1 && sudo apt upgrade -y -qq >/dev/null 2>&1
+        sudo apt update -qq >/dev/null 2>&1
         dependencies=("curl" "socat" "git" "cron" "ufw")
         cron_pkg="cron"
         firewall_pkg="ufw"
