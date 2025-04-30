@@ -68,46 +68,32 @@ detect_os() {
     echo -e "${GREEN}✅ 检测到操作系统: $OS_TYPE ($PKG_MANAGER)。${RESET}"
 }
 
-# 安装依赖包
+# 安装依赖
 install_dependencies() {
     local dependencies=()
-    local firewall_pkg=""
-    local cron_pkg=""
 
-if [[ "$OS_TYPE" == "ubuntu" || "$OS_TYPE" == "debian" ]]; then
-    sudo apt update -qq >/dev/null 2>&1
-    dependencies=("curl" "socat" "cron" "ufw")
-    cron_pkg="cron"
-    firewall_pkg="ufw"
+    if [[ "$OS_TYPE" == "ubuntu" || "$OS_TYPE" == "debian" ]]; then
+        dependencies=("curl" "socat" "cron" "ufw")
+    elif [[ "$OS_TYPE" == "centos" || "$OS_TYPE" == "rhel" ]]; then
+        dependencies=("curl" "socat" "cronie" "firewalld")
+    else
+        echo -e "${RED}❌ 错误：不支持的操作系统！${RESET}" >&2
+        exit 1
+    fi
+
     for pkg in "${dependencies[@]}"; do
-        if ! dpkg -s "$pkg" &>/dev/null; then
-            echo -e "${YELLOW}安装依赖: $pkg...${RESET}"
-            sudo apt install -y "$pkg" >/dev/null 2>&1 || { echo -e "${RED}❌ 错误：安装 $pkg 失败${RESET}" >&2; exit 1; }
+        if [[ "$PKG_MANAGER" == "apt" ]]; then
+            if ! dpkg -s "$pkg" &>/dev/null; then
+                echo -e "${YELLOW}安装依赖: $pkg...${RESET}"
+                sudo apt install -y "$pkg" >/dev/null 2>&1 || { echo -e "${RED}❌ 错误：安装 $pkg 失败${RESET}" >&2; exit 1; }
+            fi
+        elif [[ "$PKG_MANAGER" == "yum" ]]; then
+            if ! rpm -q "$pkg" &>/dev/null; then
+                echo -e "${YELLOW}安装依赖: $pkg...${RESET}"
+                sudo yum install -y "$pkg" >/dev/null 2>&1 || { echo -e "${RED}❌ 错误：安装 $pkg 失败${RESET}" >&2; exit 1; }
+            fi
         fi
     done
-    if ! sudo systemctl is-active --quiet "$cron_pkg"; then
-        sudo systemctl enable --now "$cron_pkg" >/dev/null 2>&1 || echo -e "${YELLOW}警告: 无法启用或启动 $cron_pkg 服务。${RESET}" >&2
-    fi
-    if ! sudo systemctl is-active --quiet "$firewall_pkg"; then
-        sudo systemctl enable --now "$firewall_pkg" >/dev/null 2>&1 || echo -e "${YELLOW}警告: 无法启用或启动 $firewall_pkg 服务。${RESET}" >&2
-    fi
-elif [[ "$OS_TYPE" == "centos" || "$OS_TYPE" == "rhel" ]]; then
-    dependencies=("curl" "socat" "cronie" "firewalld")
-    cron_pkg="cronie"
-    firewall_pkg="firewalld"
-    for pkg in "${dependencies[@]}"; do
-        if ! rpm -q "$pkg" &>/dev/null; then
-            echo -e "${YELLOW}安装依赖: $pkg...${RESET}"
-            sudo yum install -y "$pkg" >/dev/null 2>&1 || { echo -e "${RED}❌ 错误：安装 $pkg 失败${RESET}" >&2; exit 1; }
-        fi
-    done
-    if ! sudo systemctl is-active --quiet "$cron_pkg"; then
-        sudo systemctl enable --now "$cron_pkg" >/dev/null 2>&1 || echo -e "${YELLOW}警告: 无法启用或启动 $cron_pkg 服务。${RESET}" >&2
-    fi
-    if ! sudo systemctl is-active --quiet "$firewall_pkg"; then
-        sudo systemctl enable --now "$firewall_pkg" >/dev/null 2>&1 || echo -e "${YELLOW}警告: 无法启用或启动 $firewall_pkg 服务。${RESET}" >&2
-    fi
-fi
     echo -e "${GREEN}✅ 依赖安装完成。${RESET}"
 }
 
