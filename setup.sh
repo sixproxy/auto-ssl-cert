@@ -90,7 +90,7 @@ install_dependencies() {
     elif [[ "$OS_TYPE" == "centos" || "$OS_TYPE" == "rhel" ]]; then
         sudo yum update -y >/dev/null 2>&1
         dependencies=("curl" "socat" "git" "cronie" "firewalld")
-        cron_pkg="crond"
+        cron_pkg="cronie"
         firewall_pkg="firewalld"
         for pkg in "${dependencies[@]}"; do
             if ! rpm -q "$pkg" &>/dev/null; then
