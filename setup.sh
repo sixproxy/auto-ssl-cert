@@ -81,6 +81,7 @@ install_dependencies() {
         firewall_pkg="ufw"
         for pkg in "${dependencies[@]}"; do
             if ! dpkg -s "$pkg" &>/dev/null; then
+                echo -e "${YELLOW}安装依赖: $pkg...${RESET}"
                 sudo apt install -y "$pkg" >/dev/null 2>&1 || { echo -e "${RED}❌ 错误：安装 $pkg 失败${RESET}" >&2; exit 1; }
             fi
         done
@@ -88,11 +89,12 @@ install_dependencies() {
 
     elif [[ "$OS_TYPE" == "centos" || "$OS_TYPE" == "rhel" ]]; then
         sudo yum update -y >/dev/null 2>&1
-        dependencies=("curl" "socat" "git" "crond" "firewalld")
+        dependencies=("curl" "socat" "git" "cronie" "firewalld")
         cron_pkg="crond"
         firewall_pkg="firewalld"
         for pkg in "${dependencies[@]}"; do
             if ! rpm -q "$pkg" &>/dev/null; then
+                echo -e "${YELLOW}安装依赖: $pkg...${RESET}"
                 sudo yum install -y "$pkg" >/dev/null 2>&1 || { echo -e "${RED}❌ 错误：安装 $pkg 失败${RESET}" >&2; exit 1; }
             fi
         done
@@ -103,34 +105,55 @@ install_dependencies() {
 }
 
 
-# 配置防火墙开放端口 80 和 443
 configure_firewall() {
     local firewall_cmd=""
     local firewall_service_name=""
+    local ssh_port=""
+
+    # 提示用户输入 SSH 端口
+    read -r -p "请输入需要开放的 SSH 端口,否则可能导致SSH无法连接（默认 22）: " ssh_port
+    ssh_port=${ssh_port:-22} # 如果用户未输入，默认使用 22 端口
 
     if [[ "$OS_TYPE" == "ubuntu" || "$OS_TYPE" == "debian" ]]; then
         firewall_cmd="ufw"
         firewall_service_name="ufw"
         if sudo "$firewall_cmd" status | grep -q "inactive"; then
-             echo "y" | sudo "$firewall_cmd" enable >/dev/null 2>&1 || { echo -e "${RED}❌ 错误：UFW 启用失败${RESET}" >&2; exit 1; }
+            echo "y" | sudo "$firewall_cmd" enable >/dev/null 2>&1 || { echo -e "${RED}❌ 错误：UFW 启用失败${RESET}" >&2; exit 1; }
         fi
-        sudo "$firewall_cmd" allow 80/tcp comment 'Allow HTTP' >/dev/null || echo -e "${YELLOW}警告: 无法添加 UFW 80/tcp 规则。${RESET}" >&2
-        sudo "$firewall_cmd" allow 443/tcp comment 'Allow HTTPS' >/dev/null || echo -e "${YELLOW}警告: 无法添加 UFW 443/tcp 规则。${RESET}" >&2
-        echo -e "${GREEN}✅ UFW 已配置开放 80 和 443 端口。${RESET}"
+        # 检查并开放用户指定的 SSH 端口
+        if ! sudo "$firewall_cmd" status | grep -q "$ssh_port/tcp"; then
+            sudo "$firewall_cmd" allow "$ssh_port"/tcp comment 'Allow SSH' >/dev/null || echo -e "${YELLOW}警告: 无法添加 UFW $ssh_port/tcp 规则。${RESET}" >&2
+        fi
+        # 检查并开放 HTTP 和 HTTPS 端口
+        if ! sudo "$firewall_cmd" status | grep -q "80/tcp"; then
+            sudo "$firewall_cmd" allow 80/tcp comment 'Allow HTTP' >/dev/null || echo -e "${YELLOW}警告: 无法添加 UFW 80/tcp 规则。${RESET}" >&2
+        fi
+        if ! sudo "$firewall_cmd" status | grep -q "443/tcp"; then
+            sudo "$firewall_cmd" allow 443/tcp comment 'Allow HTTPS' >/dev/null || echo -e "${YELLOW}警告: 无法添加 UFW 443/tcp 规则。${RESET}" >&2
+        fi
+        echo -e "${GREEN}✅ UFW 已配置开放 $ssh_port, 80 和 443 端口。${RESET}"
 
     elif [[ "$OS_TYPE" == "centos" || "$OS_TYPE" == "rhel" ]]; then
         firewall_cmd="firewall-cmd"
         firewall_service_name="firewalld"
         sudo systemctl is-active --quiet "$firewall_service_name" || { echo "  启动 Firewalld..."; sudo systemctl start "$firewall_service_name" >/dev/null 2>&1 || { echo -e "${RED}❌ 错误：Firewalld 启动失败${RESET}" >&2; exit 1; }; }
-        sudo "$firewall_cmd" --zone=public --add-port=80/tcp --permanent >/dev/null || echo -e "${YELLOW}警告:无法添加 Firewalld 80/tcp 规则。${RESET}" >&2
-        sudo "$firewall_cmd" --zone=public --add-port=443/tcp --permanent >/dev/null || echo -e "${YELLOW}警告:无法添加 Firewalld 443/tcp 规则。${RESET}" >&2
+        # 检查并开放用户指定的 SSH 端口
+        if ! sudo "$firewall_cmd" --query-port="$ssh_port"/tcp >/dev/null 2>&1; then
+            sudo "$firewall_cmd" --zone=public --add-port="$ssh_port"/tcp --permanent >/dev/null || echo -e "${YELLOW}警告: 无法添加 Firewalld $ssh_port/tcp 规则。${RESET}" >&2
+        fi
+        # 检查并开放 HTTP 和 HTTPS 端口
+        if ! sudo "$firewall_cmd" --query-port=80/tcp >/dev/null 2>&1; then
+            sudo "$firewall_cmd" --zone=public --add-port=80/tcp --permanent >/dev/null || echo -e "${YELLOW}警告: 无法添加 Firewalld 80/tcp 规则。${RESET}" >&2
+        fi
+        if ! sudo "$firewall_cmd" --query-port=443/tcp >/dev/null 2>&1; then
+            sudo "$firewall_cmd" --zone=public --add-port=443/tcp --permanent >/dev/null || echo -e "${YELLOW}警告: 无法添加 Firewalld 443/tcp 规则。${RESET}" >&2
+        fi
         sudo "$firewall_cmd" --reload >/dev/null || echo -e "${YELLOW}警告: Firewalld 配置重载失败。${RESET}" >&2
-        echo -e "${GREEN}✅ Firewalld 已配置开放 80 和 443 端口。${RESET}"
+        echo -e "${GREEN}✅ Firewalld 已配置开放 $ssh_port, 80 和 443 端口。${RESET}"
 
     else
-        echo -e "${YELLOW}警告: 未识别的防火墙服务，请手动开放端口 80 和 443。${RESET}" >&2
+        echo -e "${YELLOW}警告: 未识别的防火墙服务，请手动开放端口 $ssh_port, 80 和 443。${RESET}" >&2
     fi
-    # echo "提示: 请手动检查防火墙规则以最终确认。" >&2 
 }
 
 # 下载安装 acme.sh
